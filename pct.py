@@ -66,14 +66,22 @@ class ModelNet40Dataset(Dataset):
 
         if self.augment:
             # TODO: 实现数据增强策略
-            # 提示：可以考虑随机旋转、随机缩放、随机抖动等
-            # 示例：随机绕 Y 轴旋转
+            # 随机旋转 + 缩放 + 相对尺度平移/抖动。
             theta = np.random.uniform(0, 2 * np.pi)
             cos_t, sin_t = np.cos(theta), np.sin(theta)
             R = np.array([[cos_t, 0, sin_t],
                           [0, 1, 0],
                           [-sin_t, 0, cos_t]], dtype=np.float32)
             points = points @ R.T
+            cloud_scale = np.sqrt((points ** 2).sum(axis=1)).max()
+            points = points * np.random.uniform(0.9, 1.1)
+            points = points + np.random.uniform(
+                -0.05 * cloud_scale, 0.05 * cloud_scale,
+                size=(1, 3)).astype(np.float32)
+            jitter = np.clip(
+                0.005 * cloud_scale * np.random.randn(*points.shape),
+                -0.02 * cloud_scale, 0.02 * cloud_scale)
+            points = points + jitter.astype(np.float32)
 
         if self.labels is not None:
             return points.astype(np.float32), self.labels[idx]
@@ -283,11 +291,11 @@ def main():
 
     # --------------------------------------------------
     # TODO: 设置优化器和学习率调度器
-    # 提示：可以尝试 SGD / Adam，配合 cosine annealing 等调度策略
+    # 保留 baseline 的 SGD 路线，配合 momentum、weight decay 和 cosine 衰减。
     # --------------------------------------------------
     optimizer = nn.SGD(model.parameters(), lr=args.lr,
                        momentum=0.9, weight_decay=1e-4)
-    scheduler = CosineAnnealingLR(optimizer, T_max=args.epochs)
+    scheduler = CosineAnnealingLR(optimizer, T_max=args.epochs, eta_min=1e-5)
 
     # --------------------------------------------------
     # 训练循环
